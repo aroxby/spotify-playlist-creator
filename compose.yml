@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    image: spotify-playlist-creator
+    init: true
+    ports:
+      - 5000:5000
+    volumes:
+      - .:/src
+    environment:
+      FLASK_DEBUG: True
+      FLASK_RUN_HOST: 0.0.0.0
+      SPOTIFY_CLIENT_ID: $SPOTIFY_CLIENT_ID
+      SPOTIFY_CLIENT_SECRET: $SPOTIFY_CLIENT_SECRET
