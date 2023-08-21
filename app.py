@@ -1,10 +1,13 @@
+from datetime import datetime
 import os
-from urllib.parse import quote_plus
 from uuid import uuid4
 
 from flask import Flask, redirect, request
-import requests
 
+from spotify import (
+    add_tracks_to_playlist, build_oauth_url, get_user_profile,
+    create_playlist, get_access_token, get_tracks,
+)
 
 client_id = os.environ['SPOTIFY_CLIENT_ID']
 client_secret = os.environ['SPOTIFY_CLIENT_SECRET']
@@ -23,17 +26,10 @@ def index():
 @app.route('/init')
 def flow_init():
     state = str(uuid4())  # FIXME: Sign something here so we can verify it computationally
-    scope = 'user-library-read'
+    scope = 'user-read-private user-read-email user-library-read playlist-modify-private playlist-modify-public'
 
-    # TODO: Use URL builder
-    url = 'https://accounts.spotify.com/authorize'
-    url += '?response_type=code'
-    url += '&client_id=' + quote_plus(client_id)
-    url += '&scope=' + quote_plus(scope)
-    url += '&redirect_uri=' + quote_plus(redirect_uri)
-    url += '&state=' + quote_plus(state)
-
-    print(f'Redirecting to {url}')
+    url = build_oauth_url(state, scope, client_id, redirect_uri)
+    print('Redirecting to Spotify...')
     return redirect(url)
 
 
@@ -42,39 +38,24 @@ def callback():
     auth_code = request.args['code']
     # state = request.args['state']
 
-    token = get_access_token(auth_code)
+    print('Authenticating with Spotify...')
+    token = get_access_token(auth_code, client_id, client_secret, redirect_uri)
 
-    profile_url = 'https://api.spotify.com/v1/me/tracks'
-    headers = {'authorization': f'Bearer {token}'}
-    response = requests.get(profile_url, headers=headers, params={'limit': 50})
-    try:
-        return response.json()
-    except:
-        raise ValueError(dump_response(response))
+    print('Getting user profile...')
+    user = get_user_profile(token)
 
+    print('Loading tracks...')
+    tracks = get_tracks(token)
 
-def dump_response(response):
-    data = {
-        'status': str(response.status_code),
-        'body': str(response.content),
-    }
+    print('Creating new playlist...')
+    playlist_name = 'SPC (' + str(datetime.now()) + ')'
+    playlist_description = 'Created automagically on ' + str(datetime.now())
+    playlist = create_playlist(playlist_name, playlist_description, user, token)
+
+    print('Adding tracks to playlist...')
+    add_tracks_to_playlist(tracks, playlist, token)
+
+    print('Done!')
+
+    data = playlist['external_urls']
     return data
-
-
-def get_access_token(auth_code):
-    url = 'https://accounts.spotify.com/api/token'
-    auth = (client_id, client_secret)
-    headers = {
-        'content-type': 'application/x-www-form-urlencoded',
-    }
-    data = {
-        'grant_type': 'authorization_code',
-        'code': auth_code,
-        'redirect_uri': redirect_uri,
-    }
-
-    response = requests.post(url, auth=auth, headers=headers, data=data)
-    try:
-        return response.json()['access_token']
-    except:
-        raise ValueError(dump_response(response))
